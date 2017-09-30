@@ -1,0 +1,298 @@
+
+
+import numpy as np
+import pandas as pd
+from datetime import datetime,date, time, timedelta
+import time as time_2
+
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import StaleElementReferenceException
+
+def start_browser():
+    
+    driver = webdriver.Firefox(executable_path=r'C:\Users\Sourabh jain\Anaconda3\selenium\geckodriver.exe')
+    wait = WebDriverWait(driver, 10)
+
+    return driver, wait
+
+def select_date(current_date):
+    
+    # coverting date in string format
+    input_date = datetime.strftime(current_date, '%d/%m/%Y')
+    
+    elem_date = wait.until(EC.presence_of_element_located((By.NAME, 'txtDate')))
+    elem_date.clear()
+    elem_date.send_keys(input_date)
+    elem_date.send_keys(Keys.RETURN) # presses submit button
+    
+    # waiting to let page load completely
+    time_2.sleep(sm_delay)
+    
+    return None
+
+def select_discom(discom):
+    
+    elem_Discom = wait.until(EC.presence_of_element_located((By.NAME, 'selDiscom')))
+    Select(browser.find_element_by_name('selDiscom')).select_by_value(discom)
+    
+    # waiting to let page load completely
+    time_2.sleep(sm_delay)
+    
+    return None
+
+def select_plant_type(plant):
+    
+    elem_Types = wait.until(EC.presence_of_element_located((By.NAME, 'selDCType')))
+    Select(browser.find_element_by_name('selDCType')).select_by_value(plant)
+    
+    # waiting to let page load completely
+    time_2.sleep(sm_delay)
+    
+    return None
+
+def select_highest_rev ():
+    
+    elem_Rev = wait.until(EC.presence_of_element_located((By.NAME, 'selDCRen')))
+    elem_Rev = Select(browser.find_element_by_name('selDCRen'))
+    
+    # list of available values
+    options_Rev = [i.text for i in elem_Rev.options]
+    # selecting highest revision value
+    elem_Rev.select_by_value(options_Rev[-1])
+    
+    # waiting to let page load completely
+    time_2.sleep(sm_delay)
+    
+    return None
+
+def add_blocktime (df, data_date='01/01/1900'):
+    '''This functions takes a dataframe and an input_date,and 
+    adds four columns to the dataframe: date, block no, start time, and end time'''
+    
+    # coverting date in string format
+    input_date = datetime.strftime(data_date, '%d/%m/%Y')
+    
+    df.reset_index(drop=True, inplace=True)
+    
+    if df.shape[0]==96:    
+        
+        # column of single date
+        days = [datetime.strptime(input_date, '%d/%m/%Y').date() for i in range(96)]
+        df.insert(0, 'Date', pd.Series(days))
+        
+        # Block no. from numbered from 1 to 96
+        df.insert(1,'Block', pd.Series(range(1,97)))
+        
+        # adding 15 mins block interval
+        dt = datetime.combine(date.today(), time(0))
+        start = [(dt + timedelta(minutes = 15*i)).time() for i in range(96)]
+        end = [(dt + timedelta(minutes = 15*i)).time() for i in range(1,97)]
+        
+        df.insert(2, 'Start Time', pd.Series(start))
+        df.insert(3, 'Stop Time',pd.Series(end))
+        
+        return df
+    else:
+        print('The dataframe does not have 96 rows')
+        return None
+
+def scrap_single_page(plant_type):
+    
+    #repeat  = True
+    
+    # repeating until data are found
+    #while repeat:
+    
+        # check if data are found
+        page_info = [ele.text for ele in browser.find_elements_by_xpath('html/body/form/div/div')]
+                
+        
+        # check if data exist
+        if not ('No Values Found.' in page_info):
+            
+            df= pd.DataFrame()
+            
+            # checking if 96th block row is completely loaded
+            data_loaded = not (np.nan in [ele.text for ele in browser.find_elements_by_xpath('//tr[98]/td')])
+            
+            # if data found
+            if data_loaded:
+                
+                # scraping the data 
+                try:              
+                    if plant_type == 'ISGS':
+                        html= pd.read_html(browser.page_source)
+                        df = html[2].iloc[1:,3:] # ignoring first three columns of time blocks
+                        df.columns = html[2].iloc[0,3:]
+                    else:
+                        html= pd.read_html(browser.page_source)
+                        df = html[2].iloc[1:,3:-1] # ignoring first three and last column
+                        df.columns = html[2].iloc[0,3:-1]
+                    
+                    print(df)
+                    # returning message and dataframe
+                    return 'Data Found',df
+                
+                # this exception is expected to occur rarely
+                except:
+                    return 'Scraping Error', pd.DataFrame()
+            
+            else:
+                # returning message and empty dataframe
+                return 'Slow Internet', pd.DataFrame()
+        
+        # data not found        
+        else:
+            # returning message and empty dataframe
+            return 'No Data', pd.DataFrame()
+
+def daily_data(current_date):
+    
+    # unsuccessful attempt for whole day
+    tot_attempt = 0
+    
+    # loading webpage for current date
+    select_date(current_date)
+
+    # first for loop
+    df_discom = pd.DataFrame()
+    
+    
+    for discom in Discoms: 
+        
+        # subsequent loading webpage for discom
+        select_discom(discom)
+            
+        # second for loop
+        df_type = pd.DataFrame()
+        for plant in Types:
+            
+            # loading webpage for plant type
+            select_plant_type(plant)
+
+            # Selecting highest rev
+            select_highest_rev()
+            
+            # unsuccessful attempt for single page 
+            attempt = 0
+
+            # getting response
+            message, data = scrap_single_page(plant)
+            
+            while (message =='No Data'or message =='Slow Internet' or message == 'Scraping Error'):
+                 
+                attempt+=1
+                tot_attempt+=1
+                
+                print(message+ '. Attemping again after few moments')
+                
+            
+                # wait for few mins after 5 or more consequitive unsuccessful attempts
+                if attempt>=limit:
+                    print('Too many consequetive unsuccessful attempts. Increasing delay and cooling off for few mins')
+                    global sm_delay 
+                    sm_delay +=0.5
+                    time_2.sleep(wait_period)
+                
+                if tot_attempt>=2*limit:
+                    print('Too many unsuccessful attempts for single day. Increasing delay and cooling off for few mins')
+                    sm_delay +=1
+                    time_2.sleep(wait_period)
+
+                # re-attempting to load webpage
+                select_date(current_date)
+                select_discom(discom)
+                select_plant_type(plant)
+                select_highest_rev()
+
+                message, data = scrap_single_page(plant)
+
+                # Include other errors as well, mainly DOM error
+
+                # storing data
+            try:
+                df_type = df_type.join(data, how='outer')
+                print('Data acquired for: ', discom, plant)    
+            
+            except ValueError:
+                                    
+                print('Out of Sync Error. Trying too fast. Discarding current day data, increasing delay, and restarting again for current day')
+                sm_delay +=1 
+                
+                return 'Out_of_sync'
+
+            
+        # converting into numeric
+        df_type = df_type.apply(pd.to_numeric)
+        
+        # aggregating data of discoms
+        df_discom = df_discom.add(df_type,fill_value=0)
+    
+            
+    # adding date and blocks 
+    df_discom = add_blocktime (df_discom, current_date)
+    # generating filename
+    file_name = datetime.strftime(current_date, '%d-%m-%Y')
+    # saving
+    df_discom.to_excel('{}.xlsx'.format(file_name))
+    
+    return None
+
+def start_collecting_data(str_date, end_date):
+        
+    current_date = datetime.strptime(str_date, '%d/%m/%Y').date()
+    last_date = datetime.strptime(end_date, '%d/%m/%Y').date()
+    
+    count = 0
+    while current_date <=last_date:
+        
+        print('\n\nCollecting data for {}'.format(current_date))
+        
+        # checking response
+        try:
+            response = daily_data(current_date)
+        
+        # retarting in case of following error
+        except StaleElementReferenceException as e:
+            print(e)
+            response = daily_data(current_date)
+        
+        # restarting when data, collection sequence gets out of sync
+        while response =='Out_of_sync':
+            response = daily_data(current_date)
+
+        count +=1
+        current_date = current_date + timedelta(days=1)
+        
+        if count%10 ==0:
+            print('10 Days completed. Cooling off for few mins')
+            time_2.sleep(150)
+            # increase delay here, i.e. after 10 days, decrease delay of 1 second
+            global sm_delay 
+            sm_dealy -= 1
+            
+    return None
+
+# input parameters
+url = 'http://223.31.122.114:10080/ABT/drawalSchedule.jsp?check=1&sbmt=1&scr=768'
+Date = ['14/07/2017', '16/07/2017'] # start date and end date
+Discoms = ['EZONE', 'WZONE', 'CZONE'] # names of distribution companies
+Types = ['THERMAL', 'HYDRO', 'IPP','ISGS'] # categories of power plants
+#Types = ['THERMAL', 'HYDRO', 'IPP','ISGS', 'OAC-IS', 'OAC-IAS', 'SUMMARY']
+
+sm_delay =10  # some delay after each parameter input to website
+limit = 5 # number of consequtive unsuccessful attempts before cooling off
+wait_period = 120 # wait time in seconds 'limit' number of unsuccessful attempts
+
+browser, wait = start_browser()
+browser.get(url)
+
+start_collecting_data(Date[0], Date[1])
+
+ 
+
