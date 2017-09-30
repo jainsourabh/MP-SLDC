@@ -14,8 +14,9 @@ e.	be responsible for carrying out real time operations for grid control and des
 
 The data represent block-wise drawl schedule of three power distribution companies (discoms) of Madhya Pradesh, namely, East Discom, West Discom, and Central Discom from various categories of power plants, namely, State Thermal (SSGS – T), State Hydro (SSGS – H), Independent Producers (IPP), and Inter-state power plants (ISGS). Each category has several generating stations of varying capacity, measured in MW.  Each discom draws power from these plants. A time-block represents 15 mins time duration. Each day has 96 time blocks. Drawl schedule in a given time block refers to the power supplied, measured in MW, from a particular plant to particular discom during that time block. 
 
-3) Architecture of the Script 
-The basic architecture of the script is shown in the following figure. 
+3) Architecture of the Script:
+
+The basic architecture of the script is shown in the figure. Kindly, see attached docx file for flowchart.
 
  
 4) Salient features of script:
